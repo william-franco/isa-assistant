@@ -1,27 +1,33 @@
 import os
-import sys
 import subprocess
+import sys
+import webbrowser as browser
+from datetime import datetime
+
+import psutil
+import requests
 import speech_recognition as sr
 from gtts import gTTS
 from playsound import playsound
-import requests
-from datetime import datetime
-import psutil
-import webbrowser as browser
 
-def cria_audio(audio, mensagem, lang='pt-br'):
+
+# Text-to-speech conversion and playback
+def cria_audio(audio, mensagem, lang="pt-br"):
     tts = gTTS(mensagem, lang=lang)
     tts.save(audio)
     playsound(audio)
     os.remove(audio)
 
+
+# Captures and transcribes audio from microphone
 def monitora_audio():
     reconhecedor = sr.Recognizer()
     with sr.Microphone() as source:
         print("Estou ouvindo...")
         audio = reconhecedor.listen(source)
         try:
-            mensagem = reconhecedor.recognize_google(audio, language='pt-BR')
+            # Google Speech Recognition API for Portuguese
+            mensagem = reconhecedor.recognize_google(audio, language="pt-BR")
             mensagem = mensagem.lower()
             print("Você disse:", mensagem)
             return mensagem
@@ -31,6 +37,8 @@ def monitora_audio():
             cria_audio("erro2.mp3", "Erro de conexão.")
     return ""
 
+
+# Fetches current time from external API (Brazil timezone)
 def obter_hora_brasil():
     try:
         url = "https://timeapi.io/api/Time/current/zone?timeZone=America/Sao_Paulo"
@@ -44,34 +52,43 @@ def obter_hora_brasil():
         print("Erro ao obter hora:", e)
     return None
 
+
+# Dynamically adjusts power profile based on CPU usage
 def ajustar_perfil_energia():
     uso_cpu = psutil.cpu_percent(interval=3)
     print(f"Uso médio de CPU: {uso_cpu}%")
 
+    # Power profile selection based on CPU load
     if uso_cpu < 30:
-        perfil = 'power-saver'
+        perfil = "power-saver"
     elif uso_cpu < 60:
-        perfil = 'balanced'
+        perfil = "balanced"
     else:
-        perfil = 'performance'
+        perfil = "performance"
 
     try:
-        subprocess.run(['powerprofilesctl', 'set', perfil], check=True)
+        subprocess.run(["powerprofilesctl", "set", perfil], check=True)
         print(f"Perfil de energia ajustado para: {perfil}")
     except subprocess.CalledProcessError as e:
         print("Erro ao ajustar perfil de energia:", e)
 
+
+# Adjusts screen brightness based on time of day
 def ajustar_brilho(hora):
+    # Maximum brightness period: 10:30 - 16:30
     inicio_max = hora.replace(hour=10, minute=30, second=0, microsecond=0)
     fim_max = hora.replace(hour=16, minute=30, second=0, microsecond=0)
 
     if inicio_max <= hora <= fim_max:
         brilho = 100
     else:
-        horas_diff = abs((hora - fim_max).seconds if hora > fim_max else (inicio_max - hora).seconds)
+        # Gradual brightness reduction outside peak hours
+        horas_diff = abs(
+            (hora - fim_max).seconds if hora > fim_max else (inicio_max - hora).seconds
+        )
         horas = horas_diff // 3600
         brilho = max(20, 100 - horas * 10)
-        brilho = brilho - (brilho % 2)
+        brilho = brilho - (brilho % 2)  # Ensure even number
 
     try:
         subprocess.run(["brightnessctl", "set", f"{brilho}%"], check=True)
@@ -79,6 +96,8 @@ def ajustar_brilho(hora):
     except subprocess.CalledProcessError as e:
         print("Erro ao ajustar brilho:", e)
 
+
+# Maps voice commands to application launch
 def abrir_programa(mensagem):
     programas = {
         "firefox": "firefox",
@@ -99,50 +118,59 @@ def abrir_programa(mensagem):
 
     cria_audio("naoencontrei.mp3", "Não encontrei o programa que você pediu.")
 
+
+# Main command interpreter and router
 def executa_comandos(mensagem):
-    if 'fechar assistente' in mensagem:
-        cria_audio('desligando.mp3', 'Encerrando o assistente.')
+    if "fechar assistente" in mensagem:
+        cria_audio("desligando.mp3", "Encerrando o assistente.")
         sys.exit()
 
-    elif 'horas' in mensagem:
+    elif "horas" in mensagem:
         hora = obter_hora_brasil()
         if hora:
             frase = f"Agora são {hora.strftime('%H:%M')}"
-            cria_audio('horas.mp3', frase)
+            cria_audio("horas.mp3", frase)
 
-    elif 'desligar computador' in mensagem:
-        if 'uma hora' in mensagem:
+    elif "desligar computador" in mensagem:
+        # Scheduled shutdown (minutes from now)
+        if "uma hora" in mensagem:
             os.system("shutdown -h +60")
-        elif 'meia hora' in mensagem:
+        elif "meia hora" in mensagem:
             os.system("shutdown -h +30")
-        cria_audio('desligar.mp3', "Desligamento programado.")
+        cria_audio("desligar.mp3", "Desligamento programado.")
 
-    elif 'cancelar desligamento' in mensagem:
+    elif "cancelar desligamento" in mensagem:
         os.system("shutdown -c")
-        cria_audio('cancelado.mp3', "Desligamento cancelado.")
+        cria_audio("cancelado.mp3", "Desligamento cancelado.")
 
-    elif 'pesquisar' in mensagem and 'google' in mensagem:
-        pesquisa = mensagem.replace('pesquisar', '').replace('google', '').strip()
-        cria_audio('pesquisa.mp3', f"Pesquisando por {pesquisa} no Google.")
-        browser.open(f'https://www.google.com/search?q={pesquisa}')
+    elif "pesquisar" in mensagem and "google" in mensagem:
+        pesquisa = mensagem.replace("pesquisar", "").replace("google", "").strip()
+        cria_audio("pesquisa.mp3", f"Pesquisando por {pesquisa} no Google.")
+        browser.open(f"https://www.google.com/search?q={pesquisa}")
 
-    elif 'notícias' in mensagem:
+    elif "notícias" in mensagem:
         browser.open("https://g1.globo.com")
         cria_audio("noticias.mp3", "Abrindo as notícias mais recentes.")
 
-    elif 'dólar' in mensagem:
+    elif "dólar" in mensagem:
         browser.open("https://www.google.com/search?q=cotação+dólar")
-    elif 'euro' in mensagem:
+
+    elif "euro" in mensagem:
         browser.open("https://www.google.com/search?q=cotação+euro")
-    elif 'bitcoin' in mensagem:
+
+    elif "bitcoin" in mensagem:
         browser.open("https://www.google.com/search?q=cotação+bitcoin")
 
     else:
         abrir_programa(mensagem)
 
+
+# Application entry point
 def main():
+    # Initial system configuration based on current time
     hora = obter_hora_brasil()
     print(f"Hora atual: {hora}")
+
     if hora:
         ajustar_perfil_energia()
         ajustar_brilho(hora)
@@ -150,9 +178,12 @@ def main():
         print("Não foi possível obter a hora. Pulando ajustes.")
 
     cria_audio("inicio.mp3", "Olá! Sou a ISA. Como posso ajudar?")
+
+    # Main event loop - continuous voice command listening
     while True:
         comando = monitora_audio()
         if comando:
             executa_comandos(comando)
+
 
 main()
